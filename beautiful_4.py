@@ -47,24 +47,26 @@ def CrawlPaper(num_of_paper=None, url=None):
             return
         print("{} Title: {}".format(index + 1,
                                     paper.find('p', {"class": "title is-5 mathjax"}).text.replace("\n", "").strip()))
-        print(paper.find('p', {"class": "authors"}).text.replace("\n", ""))
-        print(paper.find('p', {"class": "abstract mathjax"}).text.replace("\n", ""))
+        print(paper.find('p', {"class": "authors"}).text.replace("\n", "").strip())
+        print(paper.find('p', {"class": "abstract mathjax"}).text.replace("\n", "").replace(" △ Less","").strip())
         for link in paper.find_all("a"):
             if link.get('href'):
                 if link['href'].split('/')[-2] == 'pdf':
                     print("link paper: {} ".format(link['href']))
-                if link['href'].split("/")[-2] == 'format':
+                if link['href'].split("/")[-2] == 'abs':
                     print("link Summary paper: {}".format(link['href']))
         print("======================================================================================")
 
 
 def _main_(args):
-    keyword_search = args.keyword
-    conference_search = args.conference
-    year_search = args.year
-    num_of_paper = args.number_of_paper
-    url_origin = CreateURl(Conference=conference_search, Keywork=keyword_search, Year=year_search)
-    CrawlPaper(num_of_paper=num_of_paper, url=url_origin)
+    if __name__ == '__main__':
+        keyword_search = ' '.join(args.keyword)
+        conference_search = ' '.join(args.conference)
+        year_search = args.year
+        num_of_paper = args.number_of_paper
+        url_origin = CreateURl(Conference=conference_search, Keywork=keyword_search, Year=year_search)
+        print(url_origin)
+        CrawlPaper(num_of_paper=num_of_paper, url=url_origin)
 
 
 
@@ -74,12 +76,14 @@ if __name__ == '__main__':
     argparser.add_argument(
         '-k',
         '--keyword',
+        nargs='+',
         default="",
         help='pass keyword')
 
     argparser.add_argument(
         '-c',
         '--conference',
+        nargs='+',
         default="",
         help='pass conference need search')
 
