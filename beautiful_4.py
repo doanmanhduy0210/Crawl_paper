@@ -4,58 +4,61 @@ import argparse
 import time
 import os
 import sys
+import lxml
+import kaggle
+from lxml import html
+from shell import shell
+import xml.etree.cElementTree as etree
 
 
-def CreateURl(Conference="", Keywork="", Year=None):
-    urlparser_first = 'https://arxiv.org/search/?query='
-    urlparser_last = '&searchtype=all&source=header'
-    if Year is not None:
-        Year = str(Year)
-    else:
-        Year = ""
-    Conference = Conference.strip()
-    Keywork = Keywork.strip()
-    Year = Year.strip()
-    conference = Conference.replace(" ", "+")
-    new_keywork = Keywork.replace(" ", "+")
-    year = Year
-    url_ = urlparser_first + "+" + new_keywork + "+" + conference + "+" + year + "+" + urlparser_last
-    if Conference + Keywork + Year == "":
-        return None
-    else:
-        return url_
+def CreateURl(Conference=None, Keywork=None, Year=2020, number_of_paper=5):
+    urlparser_first = 'http://export.arxiv.org/api/query?search_query='
+    urlparser_last = '&start=0&max_results=' + str(number_of_paper)
+
+    if Keywork is None:
+        Keywork = ""
+
+    ans = Keywork.strip()
+    Year = str(Year)
+
+    if Conference is not None:
+        Conference = Conference.strip()
+        ans += " " + Conference
+    ans += " " + Year
+
+    url_ = urlparser_first + ans.replace(' ', '+') + urlparser_last
+
+    return url_
 
 
-def CrawlPaper(num_of_paper=None, url=None):
+def CrawlPaper(url=None):
+    ans = ""
     try:
         r = requests.get(url)
-        soup = BeautifulSoup(r.text,'lxml')
     except OSError:
-        print('cannot open your requests URL, maybe something wrong. Please check again !')
-        return
-    all_paper = soup.find_all("li", {"class": "arxiv-result"})
-    if len(all_paper) is 0:
-        print("Sorry!. Your query has no results.")
-        return
-    maxsize = len(all_paper)
-    if num_of_paper != None:
-        maxsize = min(int(num_of_paper),maxsize)
-    # print("number of paper need search {} and size of list paper {}".format(num_of_paper, len(all_paper)))
+        ans = "cannot open your requests URL, maybe something wrong. Please check again !"
+        return ans
+    envv = html.fromstring(r.content)
+    link_list = envv.xpath('//link[@title="pdf"]')
+    summary = envv.xpath('//summary')
+    link_summary = envv.xpath('//entry')
 
-    for index, paper in enumerate(all_paper):
-        if index >= maxsize:
-            return
-        print("{} Title: {}".format(index + 1,
-                                    paper.find('p', {"class": "title is-5 mathjax"}).text.replace("\n", "").strip()))
-        print(paper.find('p', {"class": "authors"}).text.replace("\n", "").strip())
-        print(paper.find('p', {"class": "abstract mathjax"}).text.replace("\n", "").replace(" △ Less","").replace("▽ More ","").strip())
-        for link in paper.find_all("a"):
-            if link.get('href'):
-                if link['href'].split('/')[-2] == 'pdf':
-                    print("link paper: {} ".format(link['href']))
-                if link['href'].split("/")[-2] == 'abs':
-                    print("link Summary paper: {}".format(link['href']))
-        print("======================================================================================")
+    if min(len(link_list), len(summary)) is 0:
+        ans = "Sorry!. Your query has no results."
+        return ans
+
+    for index in range(len(summary)):
+        s = ""
+        see = summary[index].text.replace("\n", " ").strip()
+        sublink = link_list[index].attrib['href']
+        sublink_summary = link_summary[index].find('id').text
+
+        s += str(index + 1) + "." + see + "\n"
+        s += "Link paper: " + sublink + "\n"
+        s += "Link summary paper: " + sublink_summary + "\n"
+        s += "========================================== \n "
+        ans += s
+    return ans
 
 def Trending_github(url=None, number_of_trend=None):
     """ crawl data in github.com/trending """
@@ -78,7 +81,7 @@ def Trending_github(url=None, number_of_trend=None):
         suffix_link = trend.find('h1', {"class": "h3 lh-condensed"}).a.get("href").strip()
         result = origin_link + suffix_link
         decription = str(index + 1) + ". " + trend.find("p", {"class": "col-9 text-gray my-1 pr-4"}).text.strip()
-        s += "\n" + decription + "\n" + result + "\n" + " ====================================== "
+        s += "\n" + decription + "\n" + result + "\n" + " ======================== "
 # this function return list of row, every single row must print in one line.
     return s
 
@@ -97,7 +100,7 @@ def Trending_paperwithcode(url=None, number_of_trending=None):
     list_trend = soup.find_all('div', {"class": "row infinite-item item"})
     if number_of_trending is not None:
         number_of_trending = min(number_of_trending, len(list_trend))
-    print(number_of_trending)
+    
     for index, trend in enumerate(list_trend):
         if index == number_of_trending:
             break
@@ -133,41 +136,126 @@ def crawl_conference(url=None, number_of_conference=None):
         text = str(index + 1) + ". " + value.table.tr.find_all('a')[0].text.strip()
         link_conference = value.table.find_all('a', {"target": "_blank"})[0]['href'].strip()
 
-        result += text + "\n" + "link summary conference: " + link_summary + "\n" + "link conference:         " + link_conference + '\n' + "=====================================" + "\n"
+        result += text + "\n" + "link summary conference: " + link_summary + "\n" + "link conference:         " + link_conference + "\n"
     return result
+
+def crawl_competitions():
+
+    """ we using Kaggle API for crawl competitions """
+
+    READ_SHELL_COMMAND = shell('kaggle competitions list')
+    information = []
+    for file in READ_SHELL_COMMAND.output():
+        information.append(file)
+
+    result = ""
+    link_perfix = 'https://www.kaggle.com/c/'
+    for index, value in enumerate(information):
+        if index == 1 :
+            continue
+        value = value.replace("userHasEntered","").replace("True","").replace("False","")
+        result += value + "\n"
+        if index >1:
+            link = "Link: " + link_perfix + value.split(" ")[0] + "\n"
+            result +=link
+
+
+    return result
+
+
+def crawl_medium():
+    """ we crawl articles in medium.com """
+    #     url = "https://medium.com/topic/artificial-intelligence"
+    url = 'https://medium.com/topic/machine-learning'
+    r = requests.get(url)
+    soup = BeautifulSoup(r.text, 'lxml')
+    root = soup.find('div', {'class': 'a b c'}).find('div', {'class': 'n p'}).find('div',
+                                                                                   {'class': 'z ab ac ae af ag ah ai'})
+
+    #         crawl main artiles
+    articles_main = root.find_next('div').find_all_next('section')
+    ans = ''
+    for index, item in enumerate(articles_main):
+        if index % 2 == 0:
+            continue
+        content = ''
+        link = ''
+        content = item.find('a').text
+        link = item.find('a').attrs['href']
+        if link.split('//')[0] != 'https:':
+            link = 'https://medium.com' + link
+
+        sub_item = link.split('?')[0]
+        sub_item1 = sub_item.split('/')[-1]
+        sub_item2 = sub_item1.split('-')[-1]
+        link = sub_item.replace(sub_item1, sub_item2)
+        if content == '' or link == '':
+            continue
+        ans += content + '\n'
+        ans += link + '\n'
+        ans += '============================ \n'
+    # crawl popular articles
+    pupolar_articles = root.find_all_next('div', {'class': 'r bv'})
+    ans += '\n' + 'POPULAR IN MACHINE LEARNING' + '\n'
+    for index, item in enumerate(pupolar_articles):
+        if index % 2 == 1:
+            continue
+        link = item.find('a').attrs['href']
+        title = item.find('h4').text
+
+        sub_item = link.split('?')[0]
+        sub_item1 = sub_item.split('/')[-1]
+        sub_item2 = sub_item1.split('-')[-1]
+        link = sub_item.replace(sub_item1, sub_item2)
+        ans += title + '\n'
+        ans += link + '\n'
+    return ans
+
 
 def _main_(args):
     if __name__ == '__main__':
         keyword_search = ' '.join(args.keyword)
         conference_search = ' '.join(args.conference)
         year_search = args.year
-        num_of_paper = args.number_of_paper
+        num = args.number
 # crawl paper
         print(" crawling paper ...............")
-        time.sleep(5)
-        url_origin = CreateURl(Conference=conference_search, Keywork=keyword_search, Year=year_search)
+        url_origin = CreateURl(Conference=conference_search, Keywork=keyword_search, Year=year_search,number_of_paper=num)
         print(url_origin)
-        CrawlPaper(num_of_paper=num_of_paper, url=url_origin)
+        ans = CrawlPaper(url=url_origin)
+        for item in ans:
+            print(item)
 # crawl trending in github.com/trending
         print("crawling trend/github................")
-        time.sleep(5)
+        # time.sleep(5)
         ans = Trending_github('https://github.com/trending/python?since=monthly',50).split("\n")
         for item in ans:
             print(item)
 # crawl trending in paper with code
         print("crawling trend paper with code............................")
-        time.sleep(5)
+        # time.sleep(5)
         ans = Trending_paperwithcode('https://paperswithcode.com/search?q_meta=&q=trending', 100).split("\n")
         for item in ans:
             print(item)
 # crawl conference
         print("crawling conference .............................")
-        time.sleep(5)
+        # time.sleep(5)
         ans = crawl_conference('http://www.guide2research.com/topconf/',number_of_conference = 6).split("\n")
         for item in ans:
             print (item)
+# crawl competitions
+        print("crawling competitions in kaggle")
+        ans = crawl_competitions()
+        print(ans)
 
         print("end .................................................")
+
+# crawl medium
+        print('crawling medium \n ')
+        ans = crawl_medium()
+        ans.split('\n')
+        for item in ans:
+            print(item)
 
 
 if __name__ == '__main__':
@@ -189,7 +277,7 @@ if __name__ == '__main__':
 
     argparser.add_argument(
         '-n',
-        '--number_of_paper',
+        '--number',
         default=None,
         help='number of paper need search')
 
